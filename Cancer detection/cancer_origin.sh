@@ -4,6 +4,7 @@
 
 # Create the symbolic limnk
 ln -s /opt/BINF7001/2025/Assignment2 # For the assignment
+# What is inside 
 ln -s /opt/BINF7001/2025/Prac4_2025/ref . # First reference
 ln -s /opt/BINF7001/2025/Prac5_2025/ref ref1 # Second reference
 
