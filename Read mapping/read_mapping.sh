@@ -19,26 +19,26 @@ bwa index Ll_MG1363.fasta
 # Do the alignment - using aln (generate .sai files)
 mkdir aln # Create the new directory for alignment result 
 # Align the 0514c read 1 with reference genome
-bwa aln Ll_MG1363.fasta illum/Llactis_illuminaData/0514c.1.fastq > aln/0514c.1.sai
+bwa aln Ll_MG1363.fasta 0514c.1.fastq > aln/0514c.1.sai
 # Align the 0514c read 2 with reference genome 
-bwa aln Ll_MG1363.fasta illum/Llactis_illuminaData/0514c.2.fastq > aln/0514c.2.sai 
+bwa aln Ll_MG1363.fasta 0514c.2.fastq > aln/0514c.2.sai 
 
 # Align the 1768int6 read 1 with reference genome
-bwa aln Ll_MG1363.fasta illum/Llactis_illuminaData/1768int6.1.fastq > aln/1768int6.1.sai
+bwa aln Ll_MG1363.fasta 1768int6.1.fastq > aln/1768int6.1.sai
 # Align the 1768int6 read 2 with reference genome
-bwa aln Ll_MG1363.fasta illum/Llactis_illuminaData/1768int6.2.fastq > aln/1768int6.2.sai 
+bwa aln Ll_MG1363.fasta 1768int6.2.fastq > aln/1768int6.2.sai 
 
 # Pair and map reads - using sampe (generate proper paired-end SAM files )
 mkdir sam # Create new directory for mapping result 
 # For each reads of 0514c based on the alignment result 
 bwa sampe Ll_MG1363.fasta aln/0514c.1.sai aln/0514c.2.sai \
-illum/Llactis_illuminaData/0514c.1.fastq \
-illum/Llactis_illuminaData/0514c.2.fastq > sam/0514c.Ll_MG1363.sam # The output file 
+0514c.1.fastq \
+0514c.2.fastq > sam/0514c.Ll_MG1363.sam # The output file 
 
 # For each reads of 1768int6 based on the alignment result 
 bwa sampe Ll_MG1363.fasta aln/1768int6.1.sai aln/1768int6.2.sai \
-illum/Llactis_illuminaData/1768int6.1.fastq \
-illum/Llactis_illuminaData/1768int6.2.fastq > sam/1768int6.Ll_MG1363.sam # The output 
+1768int6.1.fastq \
+1768int6.2.fastq > sam/1768int6.Ll_MG1363.sam # The output 
 
 # Covert and sort the sam files
 mkdir bam # Create direcotry for BAM files 
