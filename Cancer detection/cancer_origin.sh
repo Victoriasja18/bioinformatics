@@ -111,3 +111,71 @@ normal.realigned.bam > normal.freebayes.vcf
 #Tumour
 freebayes -F 0.2 --min-repeat-entropy 0 -f ref/genome/Homo_sapiens_assembly38.fasta \
 tumour.realigned.bam > tumour.freebayes.vcf
+
+## Identify the high and moderate genes ##
+
+# Annotate the variants calling file with the SNP sift using the reference from Gnomad
+/opt/jdk-20.0.2/bin/java -jar /opt/snpEff/SnpSift.jar \
+annotate ref/gnomad/af-only-gnomad.hg38.vcf.gz \
+normal.freebayes.vcf > normal.fb.gnomad.vcf
+
+# Count total number of variants 
+# Grep the line that is not start with (-v) # from the annotated normal 
+# Calculate each line
+grep -v "^#" normal.fb.gnomad.vcf | wc -l
+
+# Calculate including ID
+# Search line by line using awk using tab ('\t') as field separator (-F) after filtering
+# Select the third column for each line and if the third column is not equal to "." means have ID
+grep -v "^#" normal.fb.gnomad.vcf | awk -F'\t' '$3 != "."' | wc -l
+
+# Calculate non-ID
+# Search line by line using awk using tab ('\t') as field separator (-F) after filtering
+# Select the third column for each line and if the third column is equal to "." means have no ID
+grep -v "^#" normal.fb.gnomad.vcf | awk -F'\t' '$3 == "."' | wc -l
+
+# Annotate the file using snpEFF that used GRCh38 as the reference genome from the previous gnomad file 
+/opt/jdk-20.0.2/bin/java -jar /opt/snpEff/snpEff.jar -v GRCh38.105 \
+normal.fb.gnomad.vcf > normal.fb.snpeff.vcf
+
+# Filter the high and moderate variants 
+# Grep the line that is not start with (-v) # from the annotated normal 
+grep -v "^#" normal.fb.snpeff.vcf | \
+# Search line by line using awk using tab ('\t') as field separator (-F) after filtering
+awk -F'\t' '{
+# Look at the 8th column if they contained the annotation by ANN
+  if ($8 ~ /ANN=/) {
+    end=$2+length($4)-1; # Calculate the end of variants sum of the POS ($2, 2nd col) and length of ref allele - 1
+    # Split the 8th cols after "ANN" into twor parts 
+    # (a[1] before ANN, a[2] after ANN)
+    split($8,a,"ANN=");
+    # Split again into arrays anns and separates it by commas
+    split(a[2],anns,",");
+    # Iterate each anns 
+    for(i in anns) {
+    # See if the record have moderate or high
+      if (anns[i] ~ /MODERATE/ || anns[i] ~ /HIGH/) {
+      # Print the CHROM, POS, end, SNPid, the annotations
+        print $1, $2, end, $3, anns[i];
+      }
+    }
+  } # Print output using the field separated 
+}' OFS='\t' > variant_normal.txt
+
+less variant_normal.txt
+
+## Check the structural variants ##
+
+/opt/manta-1.6.0.centos6_x86_64/bin/configManta.py --bam=normal.realigned.bam \
+# Using GRCh38 as reference genome 
+--referenceFasta=ref/genome/Homo_sapiens_assembly38.fasta \
+# Output directory for the workflow setup
+# Call the regions for desired segments for call variants 
+--runDir=normal_manta --callRegions=Assignment2/a2.segments.bed.gz
+
+# Execute the workflow with 1 parallel job 
+/home/s4688638/m2/a2/normal_manta/runWorkflow.py -j 1
+
+# Look at the result 
+bcftools view normal_manta/results/variants/diploidSV.vcf.gz
+
