@@ -20,3 +20,4 @@ That is why it is important to find that region to located histone modification 
 - Peak calling using macs3 
 - Reproducibility analysis using idr 
 - False positive filtering using bedtools 
+- Utilize the python script "getclosestgene.py" to find the closest gene from the peaks (can be downloaded through https://github.com/bodenlab/binfpy.git)
