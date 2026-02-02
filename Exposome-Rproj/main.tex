@@ -1,0 +1,2152 @@
+\documentclass[11pt]{article}
+
+% Language
+\usepackage[english]{babel}
+
+% Page size and margins
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+% Fonts
+\usepackage{fontspec} % enables system fonts
+\setmainfont{Times New Roman}   % main text in Arial
+\setmonofont{Courier New}  % provides Courier font
+
+% Misc packages
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{subfigure}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]
+
+% Bibliography
+\usepackage[
+  backend=biber,
+  style=ieee,
+  sorting=none
+]{biblatex}
+\addbibresource{My first project.bib}
+\urlstyle{same}
+
+% Listings
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Define colors
+\definecolor{lightgray}{rgb}{0.95,0.95,0.95}
+\definecolor{darkgreen}{rgb}{0,0.5,0}
+\definecolor{darkblue}{rgb}{0,0,0.7}
+\definecolor{darkred}{rgb}{0.6,0,0}
+
+\lstset{
+    language=R,
+    basicstyle=\small\ttfamily,   % Courier font
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!60!black}\itshape,
+    backgroundcolor=\color{yellow!15},
+    keepspaces=true,
+    showstringspaces=false,
+    morecomment=[l]{\#},          % <-- tells listings that '#' starts a comment
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    numbersep=5pt,
+    frame=single,
+    breaklines=true,
+    language=bash,
+    frameround=tttt
+}
+
+\pagestyle{empty}
+\pagenumbering{arabic}
+
+\begin{document}
+
+\title{Data Analysis}
+
+The library used for data cleaning
+\begin{lstlisting}
+# Library 
+library(tidyverse)
+library(dplyr)
+library(haven)
+library(tibble)
+
+#Making plot
+library(ggplot2)
+
+#imputations
+library(mice)
+
+#glmnet and VIF 
+library(glmnet)
+library(car)
+
+#rexposomes
+library(rexposome)
+library(Biobase)
+set.seed(18)
+\end{lstlisting}
+
+\section{Data}
+Need to be mindful:
+
+\begin{lstlisting}[language=R]
+# Import variables 
+exposure_data <- read.csv("/Volumes/Exposome_BIS-I4068/2. Data/10. Clean data/Variable/final_variable_vs5.csv")
+# Import out data
+out_data <- read.csv("/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/clean_outcome_m12_vs3.csv", row.names = 1)
+\end{lstlisting}
+
+\section{Inspect the data}
+We further reduced the variable size due to redundancy or not really important to be included in the analysis. We also combined some variables.
+
+\begin{lstlisting}[language=R]
+m#Excluding non-important variables 
+exposure_data <- exposure_data %>% 
+  select(-c(mpht_t1t2, tothomesibs_t1t2_d, labdurtotmins_d, hresides_t1t2,
+            livestock, pctile_bweight_aus_d, numsib,
+            loneparent24m_d, starts_with("dist_any"), smkrmhrs,loneparent_t1t2_d,mpmarr_t1t2_d, smkroomdur_12m, mrecdrug12m, precdrug12m))
+
+# Mutate redundant variables 
+red_vars <- exposure_data %>% 
+  mutate(totpregsmoke = pregsmoket1_t1t2 + pregsmoket2_t1t2) %>%
+  mutate(totpregsmoke = case_when(totpregsmoke > 0 ~ 1,
+                                  totpregsmoke == 0 ~ 0)) %>%
+  mutate(passivesmoke = passive_T2 + passive_T3) %>% 
+  mutate(fever = mpfevet1_t1t2 + mpfevet2_t1t2 + mpfevet3) %>% 
+  mutate(antibiotic = antibiotic_T1_d + antibiotic_T2_d + antibiotic_T3_d) %>% 
+  mutate(decor = ceybed + celivroom + cekitch + cebabyb) %>% 
+  mutate(pregalc = rowMeans(cbind(pregalct1_t1t2, pregalct2_t1t2))) 
+
+#Remove the redundant variables
+red_vars <- red_vars %>% 
+  select(-c(pregsmokerm_t1t2, pregsmoket2_t1t2, passive_T3, passive_T2, pregsmoket1_t1t2, mpfevet3, mpfevet1_t1t2, mpfevet2_t1t2, antibiotic_T3_d, antibiotic_T1_d, antibiotic_T2_d, ceybed, celivroom, cekitch, lsumDEP_DBPs_DEHP_tod_di, pregalct1_t1t2, pregalct2_t1t2, ends_with("byb"))) 
+
+\end{lstlisting}
+
+\subsection{Change the variable names}
+Change the variables names so it would be nicer and prettier.
+
+\begin{lstlisting}[language=R]
+#Change the colnames - so the variable names is nicer
+colnames(red_vars) <- colnames(red_vars) %>% 
+  gsub("_di$","",.) %>% 
+  gsub("_t1t2$", "", .) %>% 
+  gsub("_m12$","12m",.) %>% 
+  gsub("hm$", "",.)
+
+#Renaming
+name_map <- c("l_8ohdg_w36_adj" = "l8ohdg_w36",
+  "l_8ohg_w36_adj" = "l8ohg_w36",
+  "ox_stress_gpfs" = "gPFSox",
+  "pss_score_301" = "pss_m1",
+  "pss_score_312" = "pss_m12",
+  "msmkno_12m" = "msmoke_m12", 
+  "ssmkno_12m"= "psmoke_m12",
+  "pparchilddied" = "parentchildied",
+  "hhincome12m_d" = "hhincome12m", 
+  "fcobaus_d" = "fcobaus", 
+  "mcobaus_d" = "mcobaus", 
+  "modebirth_new" = "modebirth", 
+  "pc1_modern_healthy" = "healthy_diet",
+  "pc2_western_unhealthy" = "unhealthy_diet",
+  "pc3_traditional_anglo" = "anglo_diet",
+  "pred_pm25_satnowood12m" = "pm25_12m",
+  "pred_pm25_satnowood_a" = "pm25_a",
+  "mpnonpropancontact" = "animalcontact",
+  "dist_maj_rd_m_a" = "roaddist_a", 
+  "pred_no212m" = "no2_12m",
+  "pred_no2_a" = "no2_a",
+  "dist_maj_rd_m12m" = "roaddist_12m",
+  "pnt" = "paint",
+  "chl" = "chlorine",
+  "can" = "candle",
+  "sc" = "scents",
+  "aero" = "aerosol",
+  "airfr" = "airfresh", 
+  "hmalcoprob" = "alcoprob",
+  "hmdrugprob" = "drugprob",
+  "mppetsany" = "anypets",
+  "zscore_bweight_aus_d" = "zscore_bweight",
+  "maleYN" = "sex")
+
+red_vars <- red_vars %>% 
+  rename_with(~ name_map[.x], .cols = names(name_map))
+
+cov <- red_vars %>% 
+    select(bisid, sex, zscore_bweight)
+
+red_vars <- red_vars %>% 
+  select(-sex, -zscore_bweight)
+
+\end{lstlisting}
+
+\subsection{Modifications}
+Modified father employment since everything that <0 usually don't know or refused to answer that is what it better to leave it as NA. 
+
+\begin{lstlisting}
+summary(red_vars)
+
+# Modify first 
+red_vars$fempl[red_vars$fempl < 0] <- NA
+summary(red_vars)
+\end{lstlisting}
+
+\subsection{Plot missingness}
+
+\begin{lstlisting}[language=R]
+missing_val <- red_vars1 %>% 
+  pivot_longer(everything(), names_to = "exposures", values_to = "value") %>% 
+  group_by(exposures) %>% 
+  summarise(avg = mean(value, na.rm=T),
+            sd = sd(value, na.rm = T),
+            na = sum(is.na(value)),
+            percent_na = (na/697)*100)
+            
+# Statistics for missing value 
+missing_plot <- red_vars1 %>% 
+  pivot_longer(everything(), names_to = "exposures", values_to = "value") %>% 
+  group_by(exposures) %>% 
+  summarise(avg = mean(value, na.rm=T),
+            sd = sd(value, na.rm = T),
+            na = sum(is.na(value)),
+            percent_na = (na/697)*100) %>% 
+  mutate(exposures = reorder(exposures, na)) %>% 
+  ggplot(aes(x = percent_na, y=exposures, fill = "blue")) +
+  geom_col() +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text.y  = element_text(size = 7),
+    panel.grid.major.x = element_line(colour = "grey85")
+  ) +
+  labs(x = "Percent NA (%)", y = "Exposures") +
+  xlim(0, 100)
+
+missing_plot
+\end{lstlisting}
+
+
+\section{Imputations}
+\begin{lstlisting}
+#Prepare exposure data excluding the bisid
+exp_dat <- red_vars[, -which(names(red_vars) == "bisid")]
+
+#Create the prediction matrix for imputations 
+#see tamayo uria et al 
+pred_matrix <- quickpred(exp_dat, 
+                         mincor = 0.1,
+                         minpuc = 0.4)
+result <- try({
+    mice(exp_dat,
+         method = "pmm",
+         pred = pred_matrix,
+         m = 5,
+         seed = 17550,
+         printFlag = FALSE)
+  }, silent = TRUE)
+
+result_exp <- complete(result,1)
+
+sum(is.na(result_exp)) #0 
+
+# Compare the distributions between two datasets
+library(ggforce)
+bind_rows(
+  red_vars[-1] %>% mutate(.dataset = "A"),
+  result_exp %>% mutate(.dataset = "B")
+) %>%
+  pivot_longer(where(is.numeric), names_to = "var", values_to = "val") %>%
+  group_by(.dataset, var) %>%
+  ggplot(aes(val, colour = .dataset, fill = .dataset)) +
+  geom_density(alpha = 0.25, na.rm = TRUE, adjust = 1) +
+  facet_wrap(~ var, nrow = 10, ncol = 10, scales = "free") +
+  labs(x = NULL, y = "Density", colour = "Dataset", fill = "Dataset") +
+  theme_classic(base_size = 10)
+\end{lstlisting}
+
+The analysis are robust as there is not much significant different before and after imputations. 
+
+\subsection{Save the data}
+\begin{lstlisting}
+# writing the exposures
+finalv_imp5 <- cbind(bisid = red_vars$bisid, result_exp)
+
+write.csv(finalv_imp5, "fix_final_vars_148.csv", row.names = F)
+
+# The output
+finalout <- out_data %>% 
+  rename(sLRTI = cumwhecgh) %>% 
+  select(-"cumwhecgh_cat")
+
+# Merge it with covariates
+finalout <- merge(finalout, cov, by="bisid")
+
+# Write the outcomes
+write.csv(finalout, "out_imp_cov_vs.csv", row.names = F)
+ 
+\end{lstlisting}
+
+\section{Data analysis}
+In here we start using rexposome package.
+
+There are 3 requirements for rexposome data:
+\begin{itemize}
+    \item Exposures: all the exposures every rows representing all the participants, the columns is all the exposures. First columns must be the ID.
+    \item Outcome/phenotypes: all the outcomes and its covariates. First columns must be the ID. 
+    \item Description: all information about the exposures. The rows is the exposures, make sure you have the columns family to know which family the exposures belongs to. 
+\end{itemize}
+
+Bare with me, that there are few trials that I was doing before finalising to the final models. The code would be the same. I decided to use birth weight and sex as covariates from a priori and this covariates would be included in the outcome data. 
+
+
+\begin{lstlisting}
+# Importing all the data 
+#Variable
+finalvars <- read.csv("/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/fix_final_vars_148.csv") 
+
+#Description 
+desc_new <- read.csv("/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/description_rename.csv",header = T)
+
+# Outcome 
+out_data <- read.csv("/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/out_imp_cov_vs.csv")
+\end{lstlisting}
+
+We tried by creating the exposome first. 
+\begin{lstlisting}
+eset_imp <- loadExposome(
+  exposures = finalvars,
+  phenotype = out_data,
+  description = desc_new,
+  description.famCol = "Family"
+  )
+
+eset_imp
+
+#See the missing data
+plotMissings(eset_imp, set = "exposures") # For exposures 
+\end{lstlisting}
+
+At first, I thought that rexposome package automatically using loadexposome would automatically define the ID. However, the bisid was included in the analysis. After read the manuals, turns out you need to make a path for each files and use the specific parameters to define the ID column (this parameter were not there in the loadexposome). Therefore, we are using the readExposome. 
+
+\begin{lstlisting}
+#Writing the path 
+final_vars_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/fix_final_vars_148.csv"
+final_out_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/out_imp_cov_vs.csv"
+final_desc_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/description_rename.csv"
+
+#using the rexposome
+eset_final <- readExposome(exposures = final_vars_path,
+                           phenotype = final_out_path, 
+                           description = final_desc_path,
+                           description.famCol = "Family", 
+                           description.expCol = "Name",
+                           exposures.samCol = "bisid", # Define the col for bisid
+                           phenotype.samCol = "bisid")  # Define the col for bisid
+eset_final
+# 85 exposures 
+plotFamily(eset_final, family = "all") 
+\end{lstlisting}
+
+\subsection{Transformations}
+
+At first, I want to use box-cox transformations. However, it kept showing me an error and this is because we do have some negative value such as for PC1 for diets and phtalates. After few research, that is why we are doing yeo-johnson transformations, the extension of box-cox that can handle negative values.
+
+\begin{lstlisting}
+library(e1071)
+library(car)
+
+# Function for the transformation  
+expo_best_trans <- function(var) {
+  
+  transformed_df <- var
+  
+  for (x in colnames(var)) {
+    if (is.numeric(var[[x]])) {
+      yj <- powerTransform(var[[x]], family = "yjPower")
+      transformed_df[[x]] <- yjPower(var[[x]], lambda = yj$lambda)
+    }
+  }
+  return(transformed_df)
+}
+
+# Transform the continuous data 
+eset_imp_trans <- trans(eset_final, fun = expo_best_trans)
+eset_imp_trans
+
+#Standardize 
+eset_imp_t_s <- standardize(eset_imp_trans, method = "normal")
+eset_imp_t_s
+plotFamily(eset_imp_t_s, family = "all")
+\end{lstlisting}
+
+\subsection{Correlations}
+
+\begin{lstlisting}
+#Correlation
+eset_imp_t_s_c <- correlation(eset_imp_t_s, use = "pairwise.complete.obs", method.cor = "pearson")
+
+#Plot
+plotCorrelation(eset_imp_t_s_c, type = "matrix")
+
+\end{lstlisting}
+
+Correlations has other visualizations, which is the circular diagram. But the as the variables is really big, it didn't work. The matrix didn't really give meaningful relationship Needs to find way to do dimensionality reductions.
+
+\subsection{PCA}
+
+\begin{lstlisting}
+#Trying with all T
+pca1 <- pca(eset_imp_t_s, pca = T)
+plotPCA(pca1, set = "all")
+
+plotPCA(pca1, set = "exposures", show.exposures = TRUE)
+
+#Plot the exposures
+plotEXP(pca1)
+
+#Plot the phenotype
+plotPHE(pca1)
+\end{lstlisting}
+
+The first PCA (pca1) has 65 principal components. Visualization methods implemented in rexposome only allows to visualize the first 10 principal components.
+
+\subsection{ExWAS}
+
+\begin{lstlisting}
+#Look at the phenotype 
+phenotypeNames(eset_imp_t_s)
+
+#for the cumwheeze
+ex_cum <- exwas(eset_imp_t_s, formula = cumwhecgh ~ sex + zscore_bweight, family = "gaussian")
+ex_cum
+
+plotExwas(ex_cum)
+plotEffect(ex_cum)
+\end{lstlisting}
+
+Just realized that rexposome excluded any non-continuous data in the analysis. I am scared we might miss anything since most of our variables are categorical. Need to find a way to do this.
+
+\section{New Eset}
+
+\begin{lstlisting}
+eset_final <- readExposome(exposures = final_vars_path,
+                           phenotype = final_out_path, 
+                           description = final_desc_path,
+                           description.famCol = "Family", 
+                           description.expCol = "Name",
+                           exposures.samCol = "bisid",
+                           phenotype.samCol = "bisid", 
+                           exposures.asFactor = 1) # Included all data that at least have one factor
+eset_final
+plotFamily(eset_final, family = "all") 
+\end{lstlisting}
+
+
+\subsection{Pre-processing}
+Same pre-processing done from before. 
+
+\begin{lstlisting}
+# Transform the continuous data 
+eset_imp_trans <- trans(eset_final, fun = expo_best_trans)
+eset_imp_trans
+
+#Standardize 
+eset_imp_t_s <- standardize(eset_imp_trans, method = "normal")
+eset_imp_t_s
+plotFamily(eset_imp_t_s, family = "all")
+\end{lstlisting}
+
+\subsection{ExWAS}
+\begin{lstlisting}
+#Look at the phenotype 
+phenotypeNames(eset_imp_t_s)
+
+#for the cumwheeze
+ex_cum <- exwas(eset_imp_t_s, formula = sLRTI ~ sex + zscore_bweight, family = "gaussian")
+ex_cum
+
+plotExwas(ex_cum)
+plotEffect(ex_cum)
+\end{lstlisting}
+
+\subsection{InExWAS}
+\begin{lstlisting}[language=R]
+inv_ex <- invExWAS(eset_imp_t_s, formula = ~sex + zscore_bweight)
+#head(extract(inv_ex))
+
+# The visualisation 
+clr <- rainbow(length(familyNames(eset_imp_t_s)))
+names(clr) <- familyNames(eset_imp_t_s)
+plotExwas(inv_ex, color = clr)
+\end{lstlisting}
+
+The curse of dimensionality happened in here. In rexposome, they used the method tef or threshold effective test, where we create our own p-value depended on the size of the data. Increase number of exposure will lead to smaller p-value. When testing many univariate tests (e.g., testing hundreds of exposures for association with one health outcome), the chance of getting false positives increases. Therefore, we didn't find a significant result despite probably some of the variables actually have a low p-value, because didn't passed the tef (The TEF was 7.74e-04)
+
+That is why we further separate the analysis into postnatal and prenatal. 
+
+\section{Dictionary}
+To have more clarity on our graph, however, there should be no spaces in the variables name, we will make dictionary that corresponds to the variables name. 
+
+\begin{lstlisting}
+## Dictionary 
+
+dict_name <- c(
+  pregalc = "Prenatal Alcohol Intake",
+  no2_12m = "NO2 (12m)",
+  no2_a = "NO2 (pregnancy)",
+  pm25_12m = "PM2.5 (12m)",
+  pm25_a = "PM2.5 (pregnancy)",
+  roaddist_12m = "Road distance (12m)",
+  roaddist_a = "Road distance (pregnancy)",
+  atreg12m = "aTregs (12m)",
+  GlycA_a = "GlycA (pregnancy)",
+  GlycA_b = "GlycA (birth)",
+  GlycA12m = "GlycA (12m)",
+  gPFSox = "gPFSox",
+  l8ohdg_w36 = "8-OH-dG",
+  l8ohg_w36 = "8-OH-Gua",
+  rtreg12m = "rTregs (12m)",
+  bfany = "Any Breastfed",
+  healthy_diet = "Healthy Diet",
+  unhealthy_diet = "Unhealthy Diet",
+  anglo_diet = "Anglo Diet",
+  alcoprob = "Alcohol problem",
+  drugprob = "Drugs problem",
+  eds_score = "EDS Score",
+  financialprob = "Financial problem",
+  malcot12m = "Mother alcohol intake (12m)",
+  palcot12m = "Father alcohol intake (12m)",
+  parentchildied = "Any parents/child died",
+  policecourt = "Police/legal problem",
+  pss_m1 = "PSS (1m)",
+  pss_m12 = "PSS (12m)",
+  reldied = "Relative died",
+  stolenval = "Robbery",
+  animalcontact = "Animal contact (not house)",
+  antibiotic = "Pregnancy antibiotic used",
+  anypets = "Pets",
+  disinfhmt1 = "Disinfectant (pregnancy)",
+  fever = "Fever (pregnancy)",
+  hresidesadult = "Number of Adults",
+  hresideschild = "Number of children",
+  modebirth = "Mode of birth",
+  mpfarm = "Farm work",
+  buf_500 = "Green space",
+  NDVI = "NDVI",
+  aerosol = "Aerosol",
+  airfresh = "Air fresheners",
+  candle = "Candle",
+  carpcl = "Carpet cleaner",
+  chlorine = "Chlorine",
+  decor = "Decoration in the house",
+  disinf = "Disinfectant",
+  fabsofbabycl = "Fabric softener",
+  fumany = "Any fumigations", 
+  glasscl = "Glass cleaner",
+  laubabycl = "Liquid laundry",
+  mcoil = "Mosquito coil",
+  paint = "Paint",
+  pest = "Pest",
+  repel = "Repellent",
+  scents = "Scented product",
+  stainbabycl = "Stain remover",
+  turp = "Turpentine",
+  shannon_a = "Shannon index (pregnancy)",
+  shannon12m = "Shannon index (12m)",
+  fcobaus = "Father born in Australia",
+  feducation = "Father education",
+  fempl = "Father employment",
+  hhincome12m = "Household income",
+  mage = "Mother Age",
+  mcobaus = "Mother born in Australia",
+  meducation = "Mother education",
+  mempl = "Mother employment",
+  seifa_disad = "SEIFA disadvantages score",
+  msmoke_m12 = "Mother smoke (12m)",
+  passivesmoke = "Passive smoke (pregnancy)",
+  psmoke_m12 = "Father smoke (12m)",
+  totpregsmoke = "Mother smoke (pregnancy)",
+  zscore_bweight = "Birthweight",
+  cumwhecgh = "sLRTI"
+)
+
+pretty_label <- function(x) {
+  ifelse(x %in% names(dict_name), dict_name[x], x)}
+
+# I ask chat gpt for more colors because IDK what other colors R have
+exposure_colors <- c(
+  "Family adversity" = "#FF4500",      # Orange red
+  "Biomarker" = "#B8860B",            # Crimson
+  "Diet" = "#8B4513",                 # Saddle brown
+  "SEP" = "#000080",                  # Navy blue
+  "Smoking" = "hotpink",              # Indigo
+  "Ambient air quality" = "#800080",   # Purple
+  "MGM" = "orange",                  # Deep pink
+  "Indoor air quality " = "darkgrey",
+  "Green space" = "green",           # Dark green
+  "FEME" = "#008B8B",                 # Dark cyan
+  "Phenols" = "darkgreen",              # Dark olive green
+  "Alcohol intake" = "#DC143C",        # Dark goldenrod
+  "Phtalates " = "red"            
+)
+\end{lstlisting}
+
+\section{Postnatal}
+\begin{lstlisting}
+#Updated the description
+desc_new <- read.csv("description_rename.csv")
+
+#Select the postnatal variable 
+vars_post <- desc_new %>% 
+  filter(Status == "postnatal") %>% 
+  pull(Name)
+vars_post <- c("bisid", vars_post)
+
+#Write the variables documents 
+post_vars <- finalvars[ ,vars_post]
+post_vars[] <- lapply(post_vars, as.numeric)
+write.csv(post_vars, "exposome_post_vars_vs.csv", row.names = F)
+
+#Description for postnatal
+vars_post <- vars_post[vars_post != "bisid"]
+desc_post <- desc_new[desc_new$Name %in% vars_post,]
+write.csv(desc_post, "description_update_post.csv")
+
+final_vars_post_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/exposome_post_vars_vs.csv"
+
+final_desc_post_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/description_update_post.csv"
+
+#using the rexposome
+eset_post <- readExposome(
+  exposures = final_vars_post_path,
+  phenotype = final_out_path, 
+  description = final_desc_post_path,
+  description.famCol = "Family", 
+  description.expCol = "Name",
+  exposures.samCol = 1,
+  phenotype.samCol = 1,
+  exposures.asFactor = 1)
+eset_post
+
+# Transform the continuous data 
+eset_post_t <- trans(eset_post, fun = expo_best_trans)
+eset_post_t
+
+#Standardize 
+eset_post_ts <- standardize(eset_post_t, method = "normal")
+eset_post_ts
+
+# Summary Statistics 
+plotFamily(eset_post, family = "all")
+plotFamily(eset_post_ts, family = "all")
+\end{lstlisting}
+
+\subsection{Correlations}
+We are doing Pearson's correlations. If we wanted to changed the variable names, we need to make sure to changed multiple data frame, since mismatch of names will not produced a graph. To be mindful: assay data (correlation matrix) and feature data (contains family),  
+
+\begin{lstlisting}
+#Correlation
+eset_post_c <- correlation(eset_post_ts)
+eset_post_c
+
+# Changing the row names so it will have pretty names 
+# Change the rownames for the feature data first 
+rownames(fData(eset_post_c)) <- dict_name[rownames(fData(eset_post_c))]
+# Change the rownames for the the assay data
+rownames(eset_post_c@assayData$corr) <- dict_name[rownames(eset_post_c@assayData$corr)]
+# Also the colnames 
+colnames(eset_post_c@assayData$corr) <- dict_name[colnames(eset_post_c@assayData$corr)]
+
+#Plot
+plotCorrelation(eset_post_c, type = "circos")
+\end{lstlisting}
+
+\subsection{PCA}
+\begin{lstlisting}
+#Trying with all T
+pca_post <- pca(eset_post_ts, pca = T)
+plotPCA(pca_post, set = "all")
+
+plotPCA(pca_post, set = "exposures", show.exposures = FALSE) + 
+  theme(legend.position = "right") +
+  theme_minimal()
+  
+#Plot the exposures
+plotEXP(pca_post) + 
+    # Change the scale
+  ggplot2::scale_fill_gradient2(low= "steelblue", mid = "white", high = "red") + 
+  # Change the variables name
+  ggplot2::scale_y_discrete(labels = pretty_label) +
+  labs(x = "PCs", y = "Exposures")
+  
+#Plot the phenotype
+plotPHE(pca_post) +
+  labs(x = "PCs", y = "Phenotype")
+\end{lstlisting}
+
+\subsection{ExWAS}
+Actually I run it without changing the name first, then I included the rename all the variables again. 
+\begin{lstlisting}
+#for the cumwheeze
+ex_cum_post <- exwas(eset_post_ts, formula = sLRTI ~ sex + zscore_bweight, family = "gaussian", warnings = F)
+ex_cum_post
+head(ex_cum_post@comparison)
+#plotExwas(ex_cum_post) +
+ # geom_point(size=3) + scale_color_manual(values = exposure_colors)
+#plotEffect(ex_cum_post) 
+
+exwas_post <- as.data.frame(ex_cum_post@comparison) %>% 
+  mutate(label = dplyr::recode(rownames(ex_cum_post@comparison),
+                        GlycA12m = "GlycA (12m)",
+                        financialprob = "Financial Problem",
+                        fumany = "Any fumigations",
+                        msmoke_m12 = "Mother smoke (12m)"), 
+         sig = pvalue < 0.05)
+
+# Volcano plot
+#plotVolcano(ex_cum_pre) +
+ggplot(exwas_post, aes(x=as.numeric(effect), y= -log10(as.numeric(pvalue)),
+                                   colour = sig)) +
+  geom_point() +
+  labs(x = "Effect", y = expression(-log[10](p-value))) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-5, 5)) +
+  guides(color = "none", shape = "none") +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA),
+        legend.position = "none") +
+  ggrepel::geom_text_repel(data = subset(exwas_post, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.35, "lines"),
+                           point.padding = unit(0.35, "lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black") +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  labs(x="Effect")
+
+#write.csv(ex_cum_post@comparison, "Result_postnatal_exwas.csv")
+\end{lstlisting}
+
+\subsection{InExWAS}
+\begin{lstlisting}
+inexwas_cum <- invExWAS(eset_post_ts, formula = ~zscore_bweight + sex)
+#head(extract(inexwas_cum))
+inexwas_cum
+
+# The visualisation
+# This is the first visualisations but I don't like it
+plotExwas(inexwas_cum) + 
+  geom_point(size=3) + scale_color_manual(values = exposure_colors) 
+
+#write.csv(inexwas_cum@comparison, "Result_post_inexwas.csv")
+
+# Better visualisations
+inexwas_post <- as.data.frame(inexwas_cum@comparison) %>% 
+  mutate(label = dplyr::recode(rownames(inexwas_cum@comparison),
+                               pss_m12 = "PSS (12m)",
+                               financialprob = "Financial Problem",
+                               stolenval = "Robbery",
+                               fumany = "Any fumigations",
+                               msmoke_m12 = "Mother smoke (12m)",
+                               buf_500 = "Green space",
+                               pm25_12m = "PM2.5",
+                               drugprob = "Drugs problem",
+                               repel = "Repellent"), 
+         sig = pvalue < 0.05)
+
+# Volcano plot
+#plotVolcano(ex_cum_pre) +
+ggplot(inexwas_post, aes(x=as.numeric(effect), y= -log10(as.numeric(pvalue)),
+                                   colour = sig)) +
+  geom_point() +
+  labs(x = "Effect", y = expression(-log[10](p-value))) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-0.25, 0.25)) +
+  guides(color = "none", shape = "none") +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA),
+        legend.position = "none") +
+  ggrepel::geom_text_repel(data = subset(inexwas_post, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.35, "lines"),
+                           point.padding = unit(0.35, "lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black",
+                           min.segment.length = 0) +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  labs(x="Effect")
+
+#ggsave("Result/inexwas_volcano.png", v_inexwas_po)
+\end{lstlisting}
+
+\subsection{MexWAS}
+We are using elastic net. Using lambda min and alpha 0.5, with 10 CV.
+\begin{itemize}
+    \item If coefficient > 0: higher values of that variable are associated with an increased value of the outcome
+    \item  If coefficient < 0: higher values of the predictor are associated with a decrease in the outcome.
+\end{itemize}
+\begin{lstlisting}
+# Get all the Exposures 
+post_vars_st <- expos(eset_post_ts)  
+# Obtain the outcome for postnatal 
+Y <- pData(eset_post_ts)
+Y <- Y$cumwhecgh                           
+
+# Do cross validations (to find the lambda)
+cv_enet_post <- cv.glmnet(as.matrix(post_vars_st), Y, family = "gaussian", alpha = 0.5)
+# Enet with selected lambda 
+enet_post <- glmnet(post_vars_st, Y, alpha = 0.5, lambda = cv_enet_post$lambda.min)
+
+# See which variables are important
+coef(enet_post, s = cv_enet_post$lambda.min)
+
+# Visualisations
+coef(enet_post, s = cv_enet_post$lambda.min) %>% 
+  as.matrix() %>% as.data.frame() %>%
+  setNames("coef") %>% 
+  rownames_to_column("feature") %>%
+  filter(feature != "(Intercept)") %>% 
+  ggplot(aes(x = feature, y = coef, fill = coef)) +
+  geom_col() +
+  scale_x_discrete(labels = pretty_label) +   
+  scale_fill_gradient2(low = "steelblue", mid = "white", high = "red", midpoint = 0) +
+  coord_flip() +
+  labs(x = NULL, y = "Coefficient", fill = "Value") +
+  theme_minimal(base_size = 12)
+
+\end{lstlisting}
+
+\section{Prenatal}
+We are begin to analyze about prenatal exposures. 
+
+\begin{lstlisting}
+#Select the postnatal variable 
+vars_pre <- desc_new %>% 
+  filter(Status == "prenatal") %>% 
+  pull(Name)
+vars_pre <- c("bisid", vars_pre)
+
+#Write the variables documents 
+pre_vars <- finalvars[ ,vars_pre]
+pre_vars[] <- lapply(pre_vars, as.numeric)
+write.csv(pre_vars, "exposome_pre_vars_vs.csv", row.names = F)
+
+#Description for prenatal
+vars_pre <- vars_pre[vars_pre != "bisid"]
+desc_pre <- desc_new[desc_new$Name %in% vars_pre,]
+write.csv(desc_pre, "description_update_pre.csv")
+
+final_vars_pre_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/exposome_pre_vars_vs.csv"
+
+final_desc_pre_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/description_update_pre.csv"
+
+#using the rexposome
+eset_pre <- readExposome(
+  exposures = final_vars_pre_path,
+  phenotype = final_out_path, 
+  description = final_desc_pre_path,
+  description.famCol = "Family", 
+  description.expCol = "Name",
+  exposures.samCol = 1,
+  phenotype.samCol = 1,
+  exposures.asFactor = 1)
+eset_pre
+
+# Transform the continuous data 
+eset_pre_t <- trans(eset_pre, fun = expo_best_trans)
+eset_pre_t
+
+#Standardize 
+eset_pre_ts <- standardize(eset_pre_t, method = "normal")
+eset_pre_ts
+\end{lstlisting}
+
+\subsection{Correlations}
+Same as above in 7.1. However, in here, there is some variables (i.e., like the phenols ), that wasn't in the dictionary, which cause an error. We need to do different way.  
+
+\begin{lstlisting}
+#Correlation
+eset_pre_c <- correlation(eset_pre_ts)
+eset_pre_c
+
+# Only change the name if it's contain in the dictionary
+if (!is.null(dict_name) && length(dict_name) > 0){
+  # For fData rownames
+  new_fdata_names <- rownames(fData(eset_pre_c))
+  idx <- new_fdata_names %in% names(dict_name)
+  new_fdata_names[idx] <- dict_name[new_fdata_names[idx]]
+  rownames(fData(eset_pre_c)) <- new_fdata_names
+  
+  # For rownames in correlation matrix 
+  new_row_names <- rownames(eset_pre_c@assayData$corr)
+  idx <- new_row_names %in% names(dict_name)
+  new_row_names[idx] <- dict_name[new_row_names[idx]]
+  rownames(eset_pre_c@assayData$corr) <- new_row_names
+  
+  # For colnames in correlations matrix 
+  new_col_names <- colnames(eset_pre_c@assayData$corr)
+  idx <- new_col_names %in% names(dict_name)
+  new_col_names[idx] <- dict_name[new_col_names[idx]]
+  colnames(eset_pre_c@assayData$corr) <- new_col_names
+}
+
+#Plot
+plotCorrelation(eset_pre_c, type = "circos")
+\end{lstlisting}
+
+\subsection{PCA}
+\begin{lstlisting}
+#Trying with all T
+pca_pre <- pca(eset_pre_ts, pca = T)
+plotPCA(pca_pre, set = "all")
+
+# Biplot
+plotPCA(pca_pre, set = "exposures", show.exposures = FALSE) +
+  theme(legend.position = "right") +
+  theme_minimal()
+
+#Plot the exposures
+plotEXP(pca_pre) + 
+  ggplot2::scale_fill_gradient2(low= "steelblue", 
+                                mid = "white", high = "red") +
+  scale_y_discrete(labels = pretty_label) +
+  labs(y = "Exposures", x="PCs") +
+  geom_point(size = 5) +  # increase bullet (point) size
+  theme(
+    text = element_text(size = 18),  # overall text size
+    axis.title = element_text(size = 18),  # axis labels
+    axis.text = element_text(size = 14),   # axis tick labels
+    legend.title = element_text(size = 16), # legend title
+    legend.text = element_text(size = 14)   # legend labels
+  ) +
+  guides(colour = guide_legend(override.aes = list(size = 6)))
+
+#Plot the phenotype
+plotPHE(pca_pre) + labs(y = "Phenotype", x="PCs") 
+\end{lstlisting}
+
+\subsection{ExWAS}
+\begin{lstlisting}
+ex_cum_pre <- exwas(eset_pre_ts, formula = sLRTI ~ sex + zscore_bweight, family = "gaussian", warnings = F)
+ex_cum_pre
+plotExwas(ex_cum_pre) + ggplot2::geom_point(size = 3) + scale_color_manual(values = exposure_colors)
+plotEffect(ex_cum_pre)
+
+# Write the result 
+ex_pre_res <- as.data.frame(ex_cum_pre@comparison)
+rownames(ex_pre_res) <- pretty_label(rownames(ex_pre_res)) 
+ex_pre_res <- rownames_to_column(ex_pre_res, var="variable")
+ex_pre_res <- merge(ex_pre_res, fam, by="variable")
+write.csv(ex_pre_res, "Exwas_pre_res.csv")
+
+# Visualisations
+# Mark the variables as significant
+exwas_pre <- as.data.frame(ex_cum_pre@comparison) %>% 
+  mutate(label = dplyr::recode(rownames(ex_cum_pre@comparison),
+                        hresideschild = "Number of children",
+                        unhealthy_diet = "Unhealthy Diet",
+                        BPA = "BPA",
+                        seifa_disad = "SEIFA disadvantages",
+                        GlycA_a = "GlycA (pregnancy)",
+                        pregalc = "Prenatal Alcohol Intake",
+                        healthy_diet = "Healthy Diet"), 
+         sig = pvalue < 0.05)
+
+# Volcano plot
+#plotVolcano(ex_cum_pre) +
+ggplot(exwas_pre, aes(x=as.numeric(effect), y= -log10(as.numeric(pvalue)),
+                                   colour = sig)) +
+  geom_point() +
+  labs(x = "Effect", y = expression(-log[10](italic(P)))) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-5, 5)) +
+  guides(color = "none", shape = "none") +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA),
+        legend.position = "none") +
+  ggrepel::geom_text_repel(data = subset(exwas_pre, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.35, "lines"),
+                           point.padding = unit(0.35, "lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black") +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  labs(x="Effect")
+\end{lstlisting}
+
+\subsection{InExWAS}
+\begin{lstlisting}
+inexwas_cum_pre <- invExWAS(eset_pre_ts, formula = ~zscore_bweight + sex)
+#head(extract(inexwas_cum_pre))
+
+# Write the result
+inex_pre_res <- as.data.frame(inexwas_cum_pre@comparison)
+rownames(inex_pre_res) <- pretty_label(rownames(inex_pre_res)) 
+inex_pre_res <- rownames_to_column(inex_pre_res, var="variable")
+inex_pre_res <- merge(inex_pre_res, fam, by="variable")
+write.csv(inex_pre_res, "inExwas_pre_res.csv")
+
+# The visualisation 
+plotExwas(inexwas_cum_pre) + geom_point(size=3) + scale_color_manual(values = exposure_colors)
+
+# Create volcano plot
+inexwas_pre <- as.data.frame(inexwas_cum_pre@comparison) %>% 
+  mutate(label = dplyr::recode(rownames(inexwas_cum_pre@comparison),
+                        hresideschild = "Number of children",
+                        unhealthy_diet = "Unhealthy Diet",
+                        BPA = "BPA",
+                        seifa_disad = "SEIFA disadvantages",
+                        GlycA_a = "GlycA (pregnancy)"), 
+         sig = pvalue < 0.05)
+
+ggplot(inexwas_pre, aes(x=effect, y=-log10(pvalue),
+                                   colour = sig)) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") + 
+  geom_point() +
+  # Create the label
+  labs(x = "Effect", y = expression(-log[10](P-value))) +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-0.3, 0.3)) +
+  guides(color = "none", shape = "none") + 
+   ggrepel::geom_text_repel(data = subset(inexwas_pre, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.5, "lines"),
+                           point.padding = unit(0.35,"lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black",
+                           min.segment.length = 0) +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, 
+                                    fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA))
+
+# Write the result 
+write.csv(inexwas_cum_pre@comparison, "Result_inexwas_prenatal.csv") 
+\end{lstlisting}
+
+\subsection{MExWAS}
+Understanding elastic net:
+\begin{itemize}
+    \item If coefficient > 0: higher values of that variable are associated with an increased value of the outcome
+    \item  If coefficient < 0: higher values of the predictor are associated with a decrease in the outcome.
+\end{itemize}
+
+\begin{lstlisting}
+#Get the data
+pre_vars_st <- expos(eset_pre_ts)
+
+#glmnet
+cv_pre <- cv.glmnet(as.matrix(pre_vars_st), Y, 
+                    family = "gaussian", alpha = 0.5)
+enet_pre_cum <- glmnet(pre_vars_st, Y, alpha = 0.5, lambda = cv_pre$lambda.min)
+
+# Plot the graph 
+coef(enet_pre_cum, s = cv_pre$lambda.min) %>% 
+  as.matrix() %>% as.data.frame() %>%
+  setNames("coef") %>% 
+  rownames_to_column("feature") %>%
+  filter(feature != "(Intercept)") %>% 
+  ggplot(aes(x=feature, y=coef, fill=coef)) +
+  scale_x_discrete(labels=pretty_label) +
+  geom_col() +
+  scale_fill_gradient2(low= "steelblue", mid = "white", 
+                       high = "red") + 
+  coord_flip() +
+  labs(
+    x = NULL, y = "Coefficient",
+    fill = "Value"
+  ) +
+  theme_minimal(base_size = 12)
+\end{lstlisting}
+
+\section{Sensitivity Analyses}
+The biomarkers and MGM can be a confounding factors between the exposures and the outcome, we want to know if the analysis is robust or not.
+
+\begin{lstlisting}
+# Update the variables 
+desc_noox <- desc_new %>% 
+  filter(!Family %in% c("Biomarker", "MGM")) %>% 
+  filter(!(Name %in% c("mage")))
+
+\end{lstlisting}
+
+\subsection{Postnatal}
+\subsubsection{Pre-processing & ExwAS}
+\begin{lstlisting}
+#Select the postnatal variable 
+vars_post_cov <- desc_noox %>% 
+  filter(Status == "postnatal") %>% 
+  pull(Name)
+vars_post_cov <- c("bisid", vars_post_cov)
+
+#Write the variables documents 
+post_vars_cov <- finalvars[ ,vars_post_cov]
+post_vars_cov[] <- lapply(post_vars_cov, as.numeric)
+write.csv(post_vars_cov, "exposome_post_vars_cov_vs.csv", row.names = F)
+
+#Description for postnatal
+vars_post_cov <- vars_post_cov[vars_post_cov != "bisid"]
+desc_post_cov <- desc_noox[desc_noox$Name %in% vars_post_cov,]
+write.csv(desc_post_cov, "description_update_post_cov.csv")
+
+final_vars_post_cov_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/exposome_post_vars_cov_vs.csv"
+
+final_desc_post_cov_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/description_update_post_cov.csv"
+
+#using the rexposome
+eset_post_cov <- readExposome(
+  exposures = final_vars_post_cov_path,
+  phenotype = final_out_cov_path, 
+  description = final_desc_post_cov_path,
+  description.famCol = "Family", 
+  description.expCol = "Name",
+  exposures.samCol = "bisid",
+  phenotype.samCol = "bisid",
+  exposures.asFactor = FALSE)
+eset_post_cov
+
+# Transform the continuous data 
+eset_post_t_cov <- trans(eset_post_cov, fun = expo_best_trans)
+#Standardize 
+eset_post_ts_cov <- standardize(eset_post_t_cov, method = "normal")
+eset_post_ts
+
+# Summary Statistics 
+plotFamily(eset_post_ts_cov, family = "all")
+
+# EWAS 
+ex_cum_pos_cov <- exwas(eset_post_ts_cov, formula = cumwhecgh ~ sex + zscore_bweight, family = "gaussian", warnings = F)
+ex_cum_pos_cov
+plotExwas(ex_cum_pos_cov)
+plotEffect(ex_cum_pos_cov)
+
+exwas_pos_cov <- as.data.frame(ex_cum_pos_cov@comparison) %>% 
+   mutate(label = dplyr::recode(rownames(ex_cum_pos_cov@comparison),
+                        GlycA12m = "GlycA (12m)",
+                        financialprob = "Financial Problem",
+                        fumany = "Any fumigations",
+                        msmoke_m12 = "Mother smoke (12m)"), 
+         sig = pvalue < 0.05)
+
+# Volcano plot
+#plotVolcano(ex_cum_pre) +
+ex_post_sens <- ggplot(exwas_pos_cov, aes(x=as.numeric(effect), y= -log10(as.numeric(pvalue)),
+                                   colour = sig)) +
+  geom_point() +
+  labs(x = "Effect", y = expression(-log[10](italic(P)))) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-5, 5)) +
+  guides(color = "none", shape = "none") +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA),
+        legend.position = "none") +
+  ggrepel::geom_text_repel(data = subset(exwas_pos_cov, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.35, "lines"),
+                           point.padding = unit(0.35, "lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black") +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  labs(x="Effect")
+
+
+ggsave("post_exwas_sens.png", ex_post_sens, width = 8, height = 6, dpi = 300)
+
+\end{lstlisting}
+
+\subsubsection{InExWAS}
+\begin{lstlisting}
+# Inexwas
+inexwas_cum_post_c <- invExWAS(eset_post_ts_cov, formula = ~zscore_bweight + sex)
+
+#head(extract(inexwas_cum_pre))
+inexwas_pos_cov <- as.data.frame(inexwas_cum_post_c@comparison) %>% 
+   mutate(label = dplyr::recode(rownames(inexwas_cum_post_c@comparison),
+                        pss_m12 = "PSS (12m)",
+                               financialprob = "Financial Problem",
+                               stolenval = "Robbery",
+                               fumany = "Any fumigations",
+                               msmoke_m12 = "Mother smoke (12m)",
+                               buf_500 = "Green space",
+                               pm25_12m = "PM2.5",
+                               drugprob = "Drugs problem",
+                               repel = "Repellent"), 
+         sig = pvalue < 0.05)
+
+# Volcano plot
+post_inexwas_sens <- ggplot(inexwas_pos_cov, aes(x=as.numeric(effect), y= -log10(as.numeric(pvalue)),
+                                   colour = sig)) +
+  geom_point() +
+  labs(x = "Effect", y = expression(-log[10](italic(P)))) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-5, 5)) +
+  guides(color = "none", shape = "none") +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA),
+        legend.position = "none") +
+  ggrepel::geom_text_repel(data = subset(inexwas_pos_cov, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.35, "lines"),
+                           point.padding = unit(0.35, "lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black") +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  labs(x="Effect")
+
+ggsave("post_inexwas_sens.png", post_inexwas_sens, width = 8, height = 9, dpi = 300)
+\end{lstlisting}
+
+\subsubsection{MExWAS}
+\begin{lstlisting}
+X_post_red <- expos(eset_post_ts_cov)
+
+#glmnet
+cv_postcovred <- cv.glmnet(as.matrix(X_post_red), Y, family = "gaussian", alpha = 0.5)
+enet_postcovred <- glmnet(as.matrix(X_post_red), Y, alpha = 0.5, lambda = cv_postcovred$lambda.min)
+
+#glmnet result 
+post_mexwas_sens <- coef(enet_postcovred, s = cv_postcovred$lambda.min) %>% 
+  as.matrix() %>% as.data.frame() %>%
+  setNames("coef") %>% 
+  rownames_to_column("feature") %>%
+  filter(feature != "(Intercept)") %>% 
+  ggplot(aes(x=feature, y=coef, fill=coef)) +
+  geom_col() +
+  scale_fill_gradient2(low= "steelblue", mid = "white", 
+                       high = "red", midpoint=0) + 
+  scale_x_discrete(label = pretty_label) +
+  coord_flip() +
+  labs(
+    x = NULL, y = "Coefficient",
+    fill = "Value"
+  ) +
+  theme_minimal(base_size = 12)
+
+ggsave("post_mexwas_sens.png", post_mexwas_sens, width = 8, height = 9, dpi = 300)
+\end{lstlisting}
+
+\subsection{Prenatal}
+\subsubsection{Data pre-processing & ExWAS}
+\begin{lstlisting}
+vars_pre_cov <- desc_noox %>% 
+  filter(Status == "prenatal") %>% 
+  pull(Name)
+vars_pre_cov <- c("bisid", vars_pre_cov)
+
+#Write the variables documents 
+pre_vars_cov <- finalvars[ ,vars_pre_cov]
+pre_vars_cov[] <- lapply(pre_vars_cov, as.numeric)
+write.csv(pre_vars_cov, "exposome_pre_vars_cov_vs.csv", row.names = F)
+
+#Description for postnatal
+vars_pre_cov <- vars_pre_cov[vars_pre_cov != "bisid"]
+desc_pre_cov <- desc_noox[desc_noox$Name %in% vars_pre_cov,]
+write.csv(desc_pre_cov, "description_update_pre_cov.csv")
+
+final_vars_pre_cov_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/exposome_pre_vars_cov_vs.csv"
+
+final_desc_pre_cov_path <- "/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/description_update_pre_cov.csv"
+
+#using the rexposome
+eset_pre_cov <- readExposome(
+  exposures = final_vars_pre_cov_path,
+  phenotype = final_out_cov_path, 
+  description = final_desc_pre_cov_path,
+  description.famCol = "Family", 
+  description.expCol = "Name",
+  exposures.samCol = "bisid",
+  phenotype.samCol = "bisid",
+  exposures.asFactor = FALSE)
+eset_pre_cov
+
+# Transform the continuous data 
+eset_pre_t_cov <- trans(eset_pre_cov, fun = expo_best_trans)
+#Standardize 
+eset_pre_ts_cov <- standardize(eset_pre_t_cov, method = "normal")
+eset_pre_ts
+
+# Summary Statistics 
+plotFamily(eset_pre_ts_cov, family = "all")
+
+# EWAS 
+ex_cum_pre_cov <- exwas(eset_pre_ts_cov, formula = cumwhecgh ~ sex + zscore_bweight, family = "gaussian", warnings = F)
+ex_cum_pre_cov
+plotExwas(ex_cum_pre_cov)
+plotEffect(ex_cum_pre_cov)
+
+#head(extract(inexwas_cum_pre))
+exwas_pre_sens <- as.data.frame(ex_cum_pre_cov@comparison) %>% 
+   mutate(label = dplyr::recode(rownames(ex_cum_pre_cov@comparison),
+                        hresideschild = "Number of children",
+                        unhealthy_diet = "Unhealthy Diet",
+                        BPA = "BPA",
+                        seifa_disad = "SEIFA disadvantages",
+                        GlycA_a = "GlycA (pregnancy)",
+                        pregalc = "Prenatal Alcohol Intake",
+                        healthy_diet = "Healthy Diet"), 
+         sig = pvalue < 0.05)
+
+# Volcano plot
+exwas_pre_sens <- ggplot(exwas_pre_sens, aes(x=as.numeric(effect), y= -log10(as.numeric(pvalue)),
+                                   colour = sig)) +
+  geom_point() +
+  labs(x = "Effect", y = expression(-log[10](italic(P)))) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-5, 5)) +
+  guides(color = "none", shape = "none") +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA),
+        legend.position = "none") +
+  ggrepel::geom_text_repel(data = subset(exwas_pre_sens, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.35, "lines"),
+                           point.padding = unit(0.35, "lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black") +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  labs(x="Effect")
+
+ggsave("pre_exwas_sens.png", exwas_pre_sens, width = 8, height = 6, dpi = 300)
+
+\end{lstlisting}
+
+\subsubsection{InExWAS}
+\begin{lstlisting}
+# Inexwas
+inexwas_cum_pre_c <- invExWAS(eset_pre_ts_cov, formula = ~sex + zscore_bweight)
+#head(extract(inexwas_cum_pre))
+
+inexwas_pre_sens <- as.data.frame(inexwas_cum_pre_c@comparison) %>% 
+   mutate(label = dplyr::recode(rownames(inexwas_cum_pre_c@comparison),
+                        hresideschild = "Number of children",
+                        unhealthy_diet = "Unhealthy Diet",
+                        BPA = "BPA",
+                        seifa_disad = "SEIFA disadvantages",
+                        GlycA_a = "GlycA (pregnancy)",
+                        pregalc = "Pregnancy Alcohol Intake",
+                        healthy_diet = "Healthy Diet"), 
+         sig = pvalue < 0.05)
+
+# Volcano plot
+inex_pre_sens <- ggplot(inexwas_pre_sens, aes(x=as.numeric(effect), y= -log10(as.numeric(pvalue)),
+                                   colour = sig)) +
+  geom_point() +
+  labs(x = "Effect", y = expression(-log[10](italic(P)))) +
+  # Create the threshold p-value
+  geom_hline(yintercept = -log10(1.46e-03), 
+             col="darkred", linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), 
+             col="darkgreen", linetype = "dashed") +
+  geom_vline(xintercept = 0, col="blue", linetype = "dashed") +
+  scale_colour_manual(values = c(`FALSE` = "black", 
+                                 `TRUE` = "red")) +
+  coord_cartesian(xlim = c(-5, 5)) +
+  guides(color = "none", shape = "none") +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    linewidth = 0.8, fill = NA),
+        panel.background = element_rect(fill = "white", 
+                                        color = NA),
+        plot.background  = element_rect(fill = "white", 
+                                        color = NA),
+        legend.position = "none") +
+  ggrepel::geom_text_repel(data = subset(inexwas_pre_sens, sig), 
+                           aes(label = label),
+                           size = 4,
+                           box.padding = unit(0.35, "lines"),
+                           point.padding = unit(0.35, "lines"),
+                           max.overlaps  = Inf,
+                           segment.color = "black") +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  labs(x="Effect")
+
+ggsave("pre_inexwas_sens.png", inex_pre_sens, width = 8, height = 10, dpi = 300)
+
+\end{lstlisting}
+
+\subsubsection{MExWAS}
+\begin{lstlisting}
+X_pre_red <- expos(eset_pre_ts_cov)
+
+#glmnet
+cv_precovred <- cv.glmnet(as.matrix(X_pre_red), Y, family = "gaussian", alpha = 0.5)
+enet_precovred <- glmnet(as.matrix(X_pre_red), Y, alpha = 0.5, lambda = cv_precovred$lambda.min)
+
+#glmnet result 
+pre_mexwas_sens <- coef(enet_precovred, s = cv_precovred$lambda.min) %>% 
+  as.matrix() %>% as.data.frame() %>%
+  setNames("coef") %>% 
+  rownames_to_column("feature") %>%
+  filter(feature != "(Intercept)") %>% 
+  ggplot(aes(x=feature, y=coef, fill=coef)) +
+  geom_col() +
+  scale_x_discrete(label = pretty_label) +
+  scale_fill_gradient2(low= "steelblue", mid = "white", 
+                       high = "red", midpoint=0) + 
+  coord_flip() +
+  labs(
+    x = NULL, y = "Coefficient",
+    fill = "Value"
+  ) +
+  theme_minimal(base_size = 12)
+
+ggsave("pre_mexwas_sens.png", pre_mexwas_sens, width = 8, height = 9, dpi = 300)
+\end{lstlisting}
+
+\subsection{MExWAS with covariates}
+Combining the list with the covariates
+\begin{lstlisting}
+evry <- cbind(pre_vars_st, post_vars_st, out_data)
+\end{lstlisting}
+
+\subsubsection{Postnatal}
+\begin{lstlisting}
+post_cov1 <- evry %>% 
+  select(sex, zscore_bweight, colnames(post_vars_st))
+
+#glmnet
+cv_postcov <- cv.glmnet(as.matrix(post_cov1), evry$cumwhecgh, family = "gaussian", alpha = 0.5)
+enet_postcov <- glmnet(as.matrix(post_cov1), evry$cumwhecgh, alpha = 0.5, lambda = cv_postcov$lambda.min)
+
+#glmnet result 
+wcov_post <- coef(enet_postcov, s = cv_postcov$lambda.min) %>% 
+  as.matrix() %>% as.data.frame() %>%
+  setNames("coef") %>% 
+  rownames_to_column("feature") %>%
+  filter(feature != "(Intercept)") %>% 
+  ggplot(aes(x=feature, y=coef, fill=coef)) +
+  geom_col() +
+  scale_x_discrete(label = pretty_label) +
+  scale_fill_gradient2(low= "steelblue", mid = "white", 
+                       high = "red", midpoint=0) + 
+  coord_flip() +
+  labs(
+    x = NULL, y = "Coefficient",
+    fill = "Value"
+  ) +
+  theme_minimal(base_size = 12)
+
+ggsave("wcov_post_mexwas.png", wcov_post, width = 8, height = 9, dpi = 300)
+\end{lstlisting}
+
+\subsubsection{Prenatal}
+\begin{lstlisting}
+pre_cov1 <- evry %>% 
+  dplyr::select(sex, zscore_bweight, colnames(pre_vars_st))
+
+#glmnet
+cv_precov <- cv.glmnet(as.matrix(pre_cov1), evry$cumwhecgh, family = "gaussian", alpha = 0.5)
+enet_precov <- glmnet(as.matrix(pre_cov1), evry$cumwhecgh, alpha = 0.5, lambda = cv_precov$lambda.min)
+
+#glmnet result 
+wcov_pre <- coef(enet_precov, s = cv_precov$lambda.min) %>% 
+  as.matrix() %>% as.data.frame() %>%
+  setNames("coef") %>% 
+  rownames_to_column("feature") %>%
+  filter(feature != "(Intercept)") %>% 
+  ggplot(aes(x=feature, y=coef, fill=coef)) +
+  geom_col() +
+  scale_fill_gradient2(low= "steelblue", mid = "white", 
+                       high = "red", midpoint=0) + 
+  scale_x_discrete(label = pretty_label) +
+  coord_flip() +
+  labs(
+    x = NULL, y = "Coefficient",
+    fill = "Value"
+  ) +
+  theme_minimal(base_size = 12)
+
+ggsave("wcov_pre_mexwas.png", wcov_pre, width = 8, height = 9, dpi = 300)
+\end{lstlisting}
+
+\section{DSA}
+Deletion substitution addition algorithm. Based on many papers, especially from HELIX study, they used this method for multivariable exposure analysis. This actually similar to elastic net that created for variable selection for model at the end. 
+
+This one is too long, this is just an example. Would do the rest inside a cluster
+
+We are doing the cross validations first - inside the cluster
+This is for running the scripts (.sh) format
+\begin{lstlisting}
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=48G
+#SBATCH --job-name=dsa
+#SBATCH --partition=general
+#SBATCH --account=a_mcrae
+#SBATCH --output=slurm_%j.out
+#SBATCH --error=slurm_%j.err
+#SBATCH --time=2:00:00
+
+#Load necessary module
+module load r/4.4.2
+
+# For the packages
+# Set R to use your local library
+export R_LIBS_USER="/home/uqvsjali/R/x86_64-pc-linux-gnu-library/4.4"
+
+echo "Using R_LIBS_USER=$R_LIBS_USER"
+echo "Installed packages:"
+ls "$R_LIBS_USER"
+echo "Starting the analysis for postnatal"
+
+#Running the Rscript 
+Rscript --vanilla "/home/uqvsjali/dsa/dsa.R"
+echo 'R_LIBS_USER="/home/uqvsjali/R/x86_64-pc-linux-gnu-library/4.4"' >  ~/.Renviron
+\end{lstlisting}
+
+Cross-validations (using R script)
+\begin{lstlisting}
+set.seed(177750)
+
+# Library
+library(partDSA)
+library(caret)
+library(ggplot2)
+library(tidyverse)
+library(parallel) #Make computation time faster 
+library(doParallel) 
+
+# Close any existing clusters
+try(stopCluster(cl), silent = TRUE)
+try(stopImplicitCluster(), silent = TRUE)
+
+# Clear all connections
+closeAllConnections()
+
+# setup the parallel computing
+cl <- makeCluster(8)
+registerDoParallel(cl)
+
+#Reading the data 
+#Postnatal 
+X_post <- read.csv("/home/uqvsjali/dsa/postnatal_expo.csv")
+
+#Prenatal exposures 
+X_pre <- read.csv("/home/uqvsjali/dsa/prenatal_expo.csv")
+
+all <- cbind(X_post, X_pre)
+
+#The outcome 
+finalout <- read.csv("/home/uqvsjali/dsa/outcome_update.csv")
+Y1 <- finalout$cumwhecgh
+Y2 <- finalout$cumwhecgh_cat
+
+#The hyperparameter list 
+hyperpar <- expand.grid(
+  cut.off.growth = c(10,15,20), #max partitions to be explored
+  minsplit = c(20,30), #min number of observation necessary to split
+  minbuck = c(2,3,5) #min observations in one partitions 
+)
+
+#Function for the tuning
+cv_dsa <- function(x, y, formula, params, nfolds = 5) {
+  library(parallel)
+  library(caret)
+  
+  n <- nrow(x)
+  folds <- createFolds(1:n, k = nfolds, list = TRUE)
+  
+  # Use parallel processing for cross-validation folds
+  cv_errors <- mclapply(1:nfolds, function(i) {
+    train_id <- unlist(folds[-i])
+    test_id <- folds[[i]]
+    
+    train_x <- x[train_id, , drop = FALSE]
+    test_x <- x[test_id, , drop = FALSE]
+    train_y <- y[train_id]
+    test_y <- y[test_id]
+    
+    control_dsa <- DSA.control(
+      cut.off.growth = params$cut.off.growth,
+      minsplit = params$minsplit,
+      minbuck = params$minbuck
+    )
+    
+    # Try fitting and prediction
+    result <- tryCatch({
+      model_dsa <- partDSA(x = train_x, y = train_y, control = control_dsa)
+      pred <- predict(model_dsa, newdata = test_x)
+      mean((test_y - pred)^2)
+    }, error = function(e) {
+      warning(paste("Error in fold", i, ":", e$message))
+      NA
+    })
+    
+    return(result)
+    
+  }, mc.cores = 8)
+  
+  # Return average error
+  return(mean(unlist(cv_errors), na.rm = TRUE))}
+
+#Let's do the tuning
+results <- data.frame(hyperpar, cv_error = NA)
+
+for(i in 1:nrow(hyperpar)) {
+  cat("Testing parameter set", i, "of", nrow(hyperpar), "\n")
+  
+  cv_error <- cv_dsa(
+    x = all,
+    y = Y1,
+    formula = Y1 ~ .,
+    params = hyperpar[i, ],
+    nfolds = 5
+  )
+  
+  results$cv_error[i] <- cv_error
+  
+  # Print progress
+  cat("Parameters:", toString(hyperpar[i, ]), 
+      "CV Error:", round(cv_error, 4), "\n")
+}
+
+# Find best parameters
+best_idx <- which.min(results$cv_error)
+best_params <- hyperpar[best_idx, ]
+best_error <- results$cv_error[best_idx]
+\end{lstlisting}
+
+The best parameters were: minsplit = 30, minbuck = 5, cut.off.growth = 10. We will do a 30 bootstrap samples (I tried just using different seed but it didn't work because they chose the same variables)
+\begin{lstlisting}
+all <- cbind(X_post, X_pre)
+# Create 30 bootstrap samples
+B <- 30
+# Create a list
+runs <- vector("list", B)
+
+for (i in seq_len(B)) {
+  set.seed(i)
+  # Bootstrapping
+  idx <- sample(nrow(all), replace = TRUE)        
+  Xb  <- all[idx, , drop = FALSE]
+  Yb  <- Y[idx]
+
+    # To know which seeds
+  cat("This is seed", i)
+  # Run the DSA for each seeds
+  fit <- partDSA(
+    x = Xb, y = Yb,
+    control = DSA.control(minsplit = 30, minbuck = 5, cut.off.growth = 10)
+  )
+    # For each round put it inside the list 
+  runs[[i]] <- list(seed = i, idx = idx, fit = fit)
+}
+
+\end{lstlisting}
+
+
+\begin{lstlisting}
+#Find the important variables that selected each runs
+var_importances <- lapply(runs, function(x) x$fit$var.importance) 
+
+var_importance_df <- do.call(rbind, lapply(seq_along(var_importances), function(i) {
+  v <- var_importances[[i]]
+  if (is.null(v)) return(NULL)
+  v_df <- as.data.frame(v)
+  v_df$variable <- rownames(v_df)
+  v_df$i <- i
+  v_df
+}))
+
+# Grep it from the COG
+var_importance_df$sum = rowSums(var_importance_df[ , grep("^COG", names(var_importance_df)) ])
+
+var_select <- var_importance_df %>% filter(sum > 0) %>% 
+  select(i, variable, sum) %>% 
+  group_by(variable) %>% 
+  summarize(count = n()) %>% 
+  mutate(percent = count/30*100) %>% 
+  filter(count>1)
+
+# Sort it by the most selected
+var_select <- var_select[order(var_select$percent, decreasing = T), ]
+
+# Visualisations
+ggplot(var_select, aes(y=reorder(variable, percent), x=percent)) +
+  geom_col(fill = "steelblue") +
+  scale_y_discrete(label = pretty_label) +
+  labs(
+    x = "Percent selected (%)", y = "Exposure"
+  ) +
+  theme_minimal(base_size = 12) +
+  xlim(0,100)
+
+# Rename it
+var_select$variable <- pretty_label(var_select$variable)
+
+write.csv(var_select, "DSA_select.csv")
+\end{lstlisting}
+
+\section{Associations}
+
+\subsection{Creating multidatasets}
+\begin{lstlisting}
+library(devtools)
+#devtools::install_github("isglobal-brge/omicRexposome")
+#omicRexposome is not in CRAN yet 
+library(omicRexposome)
+library(MultiDataSet) 
+library(SummarizedExperiment)
+library(Biobase)
+
+# Data 
+final_lipid <- read.csv("/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/processed_lipid_id.csv", row.names = 1)
+
+#Create the assay 
+assay_lipid <- t(as.matrix(final_lipid))
+
+# Pheno data
+rownames(out_data1) <- out_data1$id
+pheno <- AnnotatedDataFrame(data= out_data1,
+          varMetadata = data.frame(
+            labelDescription = c("Sample ID",
+            "Cumulative wheeze cough
+                                 Change",
+                                 "Cumulative wheeze cough
+                                 Category", 
+                                 "Sex (1=Female, 2=Male)",
+                                  "Z-score Body Weight"),
+              row.names = colnames(out_data1)))
+
+#Feature data - This data consist of the name of our lipid & other info
+desc_lipid <- read.csv("/Users/victoriasjalimcopy/Documents/BIOX7011/Coding/BIOX7011/Final/lipid_desc.csv", row.names = 1)
+
+desc_lipid <- desc_lipid[rownames(assay_lipid), , drop = FALSE]
+
+feat_dat <- AnnotatedDataFrame(desc_lipid, 
+            varMetadata = data.frame(
+              labelDescription = c(
+              "Lipid Family Classification",
+              "Detailed Lipid Description", "chr","start", "end"),
+            row.names = colnames(desc_lipid)))
+
+# Expression set 
+lipid_eset <- ExpressionSet(
+  assayData = assay_lipid,
+  phenoData = pheno,
+  featureData = feat_dat,
+  annotation = "Lipidomics_MS"
+)
+
+# Create the multidatasets
+mds <- createMultiDataSet()
+mds <- add_eset(mds,lipid_eset,
+              dataset.type = "Lipidomics",
+              overwrite = T)
+
+# Try combine it with the all data
+mds <- add_exp(mds, eset_finalp)
+pData(eset_finalp)$id <- sampleNames(eset_finalp)
+
+#There is a mismatch ID problem - debugging 
+# can't do further analysis because of this 
+common_id <- commonIds(mds) 
+length(common_id) #same length 
+
+#Reorder the ID variable  
+# Sort numerically
+numeric_order <- common_id[order(as.numeric(common_id))]
+\end{lstlisting}
+
+\subsection{Associations}
+\begin{lstlisting}
+# Associations 
+test_assoc <- association(mds,~sex + zscore_bweight,
+                           expset = "exposures",
+                           omicset = "Lipidomics")
+
+hit <- tableHits(test_assoc, th=0.001)
+lab <- tableLambda(test_assoc)
+result_ass <- merge(hit, lab, by="exposure") %>% 
+  arrange(result_ass)
+
+#RUN THIS IF HAVE TIME - Adding another SVA analysis (more robust)
+test_sva <- association(mds,~sex + zscore_bweight,
+                          expset = "exposures",
+                        omicset = "Lipidomics",
+                        sva = "slow")
+test_sva@results
+# Calculate how many have hits 
+hit_sva <- tableHits(test_sva, th=0.001)
+lab_sva <- tableLambda(test_sva)
+sva <- merge(hit_sva, lab_sva, by="exposure")
+
+sva$exposure <- pretty_label(sva$exposure)
+sva$variable <- sva$exposure 
+sva <- merge(fam, sva, by="variable")
+
+write.csv(sva, "associations_result.csv")
+\end{lstlisting}
+
+\subsubsection{Saving the data}
+Need to find the positions first to be call out from the analysis
+\begin{lstlisting}
+# Atregs
+which(names(test_sva) == "atreg12m") #8 
+atregs_ass <- as.data.frame(getAssociation(test_sva, rid = 8))
+write.csv(atregs_ass, "atregs_ass.csv")
+
+
+#glyca
+which(names(test_sva) == "GlycA12m") #43
+glyca_ass <- as.data.frame(getAssociation(test_sva, rid = 43))
+write.csv(glyca_ass, "glyca_ass.csv")
+
+#numchild
+which(names(test_sva) == "hresideschild") #49
+numchild_ass <- as.data.frame(getAssociation(test_sva, rid = 49))
+write.csv(numchild_ass, "numchild_ass.csv")
+
+#pss 
+which(names(test_sva) == "pss_m12") #78
+pss_ass <- as.data.frame(getAssociation(test_sva, rid = 78))
+write.csv(pss_ass, "pss_ass.csv")
+\end{lstlisting}
+
+\subsubsection{Plotting the graph}
+\begin{lstlisting}
+pval <- -log10(0.001)
+#plot the protein 
+gridExtra::grid.arrange(
+    plotAssociation(test_sva, rid="GlycA12m", type="protein") + 
+    ggplot2::ggtitle("GlycA (12m)") +
+    ggplot2::geom_hline(yintercept = pval, color = "LightPink"),
+    plotAssociation(test_sva, rid="atreg12m", type="protein") + 
+      ggplot2::ggtitle("aTregs (12m)") +
+      ggplot2::geom_hline(yintercept = pval, color = "LightPink"),
+    plotAssociation(test_sva, rid="hresideschild", type="protein") + 
+      ggplot2::ggtitle("Number of Children") +
+      ggplot2::geom_hline(yintercept = pval, color = "LightPink"),
+    plotAssociation(test_sva, rid="pss_m12", type="protein") + 
+      ggplot2::ggtitle("PSS Score(12m)") +
+      ggplot2::geom_hline(yintercept = pval, color = "LightPink"),
+    ncol=3)
+
+# Plot the volcano 
+vol_ass <- gridExtra::grid.arrange(
+    plotAssociation(test_sva, rid="GlycA12m", type="volcano", tPV=pval)+
+      ggplot2::ggtitle("GlycA \n at 12m") + 
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)) +
+      ggplot2::ylim(0,25),
+    plotAssociation(test_sva, rid="atreg12m", type="volcano", tPV=pval)+
+      ggplot2::ggtitle("aTregs \n at 12m") + 
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)) +
+      ggplot2::ylim(0, 25),
+    plotAssociation(test_sva, rid="hresideschild", type="volcano", tPV=pval) + 
+      ggplot2::ggtitle("Number of \n Children") +
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)) +
+      ggplot2::ylim(0, 25),
+     plotAssociation(test_sva, rid="pss_m12", type="volcano", tPV=pval) + ggplot2::ggtitle("PSS Score \n at 12m") + 
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)) +
+      ggplot2::ylim(0, 25) +
+      ggplot2::geom_hline(yintercept = -log10(0.001), 
+                          colour ="grey", linetype ="twodash"), ncol=4)
+
+ggsave(filename = "vol_ass.png", vol_ass, width = 8, height = 9, dpi = 300)
+
+# Plot qq 
+gridExtra::grid.arrange(
+    plotAssociation(test_sva, rid="GlycA12m", type="qq")+
+      ggplot2::ggtitle("GlycA \n at 12m") + 
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)),
+    plotAssociation(test_sva, rid="atreg12m", type="qq")+
+      ggplot2::ggtitle("aTregs \n at 12m") + 
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)),
+    plotAssociation(test_sva, rid="hresideschild", type="qq") + 
+      ggplot2::ggtitle("Number of \n Children") +
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)),
+     plotAssociation(test_sva, rid="pss_m12", type="qq") + ggplot2::ggtitle("PSS Score \n at 12m") + 
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)),
+    plotAssociation(test_sva, rid="healthy_diet", type="qq") + 
+      ggplot2::ggtitle("Healthy Diet") +
+      ggplot2::theme(plot.title = element_text(hjust = 0.5)), ncol=5)
+\end{lstlisting}
+
+\section{Mediation}
+\begin{lstlisting}
+library(mediation)
+
+# Write functions for automatic mediations 
+quick_mediation <- function(data, x, y, mediators, covars = NULL) {
+  
+  med_names <- colnames(mediators)
+ 
+  out <- lapply(med_names, function(med) {
+     cat("\n=== Testing mediator:", med, "===\n")
+    tryCatch({
+      if (is.null(covars)) {
+        # Build formulas as strings first
+        f_m_str <- paste(med, "~", x)
+        f_y_str <- paste(y, "~", med, "+", x)
+      } else {
+        rhs_vars <- paste(c(x, covars), collapse = " + ")
+        f_m_str <- paste(med, "~", rhs_vars)
+        f_y_str <- paste(y, "~", med, "+", rhs_vars)
+      }
+      
+      # Convert to formulas and fit models
+      f_m <- as.formula(f_m_str)
+      f_y <- as.formula(f_y_str)
+      
+      mod.m <- lm(f_m, data = data)
+      mod.y <- lm(f_y, data = data)
+      
+      mod.m$call$formula <- f_m
+      mod.y$call$formula <- f_y
+      
+      # Run mediation - this is the key fix
+      fit <- mediation::mediate(
+        model.m = mod.m,
+        model.y = mod.y,
+        treat = x,
+        mediator = med,
+        sims = 500, 
+        boot = T
+      )
+      cat("Mediation completed for", med, "\n")
+      
+      # Extract results
+      data.frame(
+        mediator = med,
+        ACME = fit$d0,
+        ACME_CI_L = fit$d0.ci[1],
+        ACME_CI_U = fit$d0.ci[2],
+        ACME_p = fit$d0.p,
+        ADE = fit$z0,
+        ADE_CI_L = fit$z0.ci[1],
+        ADE_CI_U = fit$z0.ci[2],
+        ADE_p = fit$z0.p,
+        TotalEffect = fit$tau.coef,
+        Total_CI_L = fit$tau.ci[1],
+        Total_CI_U = fit$tau.ci[2],
+        Total_p = fit$tau.p,
+        PropMediated = fit$n0,
+        PropMed_CI_L = fit$n0.ci[1],
+        PropMed_CI_U = fit$n0.ci[2],
+        PropMed_p = fit$n0.p,
+        stringsAsFactors = FALSE,
+      )
+      
+    }, error = function(e) {
+      # Return empty row if mediation fails
+      cat("Error with mediator", med, ":", e$message, "\n")
+      return(NULL)
+    })
+  })
+  
+  # Remove NULL results and bind rows
+  out <- out[!sapply(out, is.null)]
+  if(length(out) > 0) {
+    do.call(rbind, out)
+  } else {
+    cat("No successful mediations\n")
+    return(data.frame())
+  }
+}
+
+# GlycA
+medglyc <- quick_mediation(evry,"GlycA12m", "cumwhecgh", final_lipid,covars = c("sex","zscore_bweight"))
+medglyc <- medglyc %>% 
+  mutate(p.adj = p.adjust(ADE_p, method = "fdr"))
+write.csv(medglyc, "Mediations_glyca.csv", row.names = F)
+
+
+# atregs
+medatregs <- quick_mediation(evry, "atreg12m", "cumwhecgh",
+                             final_lipid, covars = c("sex","zscore_bweight"))
+medatregs <- medatregs %>% 
+  mutate(p.adj = p.adjust(ADE_p, method = "fdr"))
+write.csv(medatregs, "Mediation_atregs.csv", row.names = F)
+
+#N children
+med_hresides <- quick_mediation(evry,"hresideschild", "cumwhecgh", final_lipid,covars = c("sex","zscore_bweight")) 
+#Adjusting p-value 
+med_hresides <- med_hresides %>% 
+  mutate(p.adj = p.adjust(ADE_p, method = "fdr"))
+write.csv(med_hresides, "Mediation_nchildren.csv", row.names = F)
+
+#Diet 
+med_diet <- quick_mediation(evry,"healthy_diet", "cumwhecgh", final_lipid,covars = c("sex","zscore_bweight"))
+med_diet <- med_diet %>% 
+  mutate(p.adj = p.adjust(ADE_p, method = "fdrddad"))
+write.csv(med_diet, "Mediation_healthydiet.csv", row.names = F)
+
+# PSS  
+med_pss <- quick_mediation(evry,"pss_m12", "cumwhecgh", final_lipid,covars = c("sex","zscore_bweight"))
+med_pss <- med_pss %>% 
+  mutate(p.adj = p.adjust(ADE_p, method = "fdr"))
+write.csv(med_pss, "Mediation_pss.csv", row.names = F)
+\end{lstlisting}
+
+\section{Partial correlations}
+\begin{lstlisting}
+# Select the significant data 
+mds_ord@assayData$exposures$exp
+out_id <- mds_ord@phenoData$exposures$main@data %>% 
+  select(id, cumwhecgh)
+
+all_id <- as.data.frame(t(mds_ord@assayData$exposures$exp))
+all_id <- rownames_to_column(all_id, var="id")
+
+all_data_phen <- merge(all_id, out_id, by = "id")
+sel_sig <- all_data_phen %>% 
+  select(hresideschild, pregalc, healthy_diet, GlycA12m, fumany, msmoke_m12, pss_m12, cumwhecgh) 
+
+colnames(sel_sig) <- pretty_label(colnames(sel_sig))
+
+# Visualisations
+# Heatmap
+library(corrplot)
+
+estimate_cor <- all_pcor$est
+p_cor <- all_pcor$pval
+
+png("corrplot_pcor.png", width = 9, height = 9, units = "in", res = 300)
+
+# Hide non-significant cells (FDR ≥ 0.05)
+cor_all <- corrplot(estimate_cor,
+         method = "color",
+         type = "full",
+         tl.col = "black",
+         tl.srt = 45,
+         p.mat = p_cor,
+         sig.level = 0.05,
+         insig = "blank",
+         addgrid.col = NA,
+         addCoef.col = "black",
+         number.cex = 0.7,
+         col = colorRampPalette(c("steelblue", "white", "firebrick"))(200))
+
+dev.off()
+
+corrplot(cor_pht)
+
+# The network
+library(ggraph)
+library(tidygraph)
+
+# Choose edges (find the significant one) 
+mask <- (p_cor < 0.05)
+edges <- which(mask & upper.tri(estimate_cor), arr.ind = TRUE)
+
+edgedf <- data.frame(
+  from = rownames(estimate_cor)[edges[,1]],
+  to   = colnames(estimate_cor)[edges[,2]],
+  r    = estimate_cor[edges]
+)
+
+# Build graph
+g <- graph_from_data_frame(edgedf, directed = FALSE)
+
+g_tbl <- as_tbl_graph(g)
+
+ggraph(g_tbl, layout = "fr") +
+  geom_edge_link(aes(width = abs(r), color = r > 0), alpha = 0.6) +
+  geom_node_point(size = 5, color = "grey80") +
+  geom_node_text(aes(label = name), repel = TRUE, size = 3,
+                 point.padding = unit(0.25, "lines"),
+                 box.padding   = unit(0.5, "lines"),
+                 segment.size = 0) +
+  scale_edge_width(range = c(0.4, 3)) +
+  scale_edge_color_manual(values = c("steelblue", "firebrick"),
+                          labels = c("Negative", "Positive")) +
+  theme_void() +
+  theme(legend.position = "bottom")
+\end{lstlisting}
+
+\end{document}
+
+
