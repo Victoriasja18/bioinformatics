@@ -7,7 +7,7 @@ Of course there is much to learn and I will update it over time!
 
 However, hit me up for any question or inquiries through vicsjalim@gmail.com 
 
-https://www.google.com/url?sa=t&source=web&rct=j&url=https%3A%2F%2Fwww.freepik.com%2Ffree-photos-vectors%2Fbiology-computer-science&ved=0CBYQjRxqFwoTCLjDyvuJupIDFQAAAAAdAAAAABAI&opi=89978449<img width="740" height="494" alt="image" src="https://github.com/user-attachments/assets/817aa04d-0b19-4660-8d34-97dd2ea4f542" />
+<img width="740" height="494" alt="image" src="https://github.com/user-attachments/assets/817aa04d-0b19-4660-8d34-97dd2ea4f542" />
 
 
 # Projects
